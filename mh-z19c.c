@@ -20,6 +20,7 @@ static char *error_strings[] = {
 	[MH_Z19C_ERROR_BAD_CHECKSUM] = "Bad checksum",
 	[MH_Z19C_ERROR_READ_SERIAL] = "Error reading serial data",
 	[MH_Z19C_ERROR_INVALID_RESPONSE_COMMAND] = "Invalid response command",
+	[MH_Z19C_ERROR_UNEXPECTED_RESPONSE] = "Unexpected response",
 };
 
 //
@@ -45,6 +46,8 @@ __attribute__((packed)) struct mh_z19c_return_value {
 // Helper Functions
 //
 
+uint8_t checksum(uint8_t *packet);
+
 uint8_t checksum(uint8_t *packet) {
 	uint8_t value;
 
@@ -67,16 +70,16 @@ static enum mh_z19c_error send_command(
 ) {
 	struct mh_z19c_command packet;
 	uint8_t *ptr;
-	int i;
 
 	packet.start_byte = START_BYTE;
 	packet.reserved = RESERVED_BYTE;
 	packet.command = command;
-	for(int i=0 ; i < sizeof(packet.data) ; i++)
+	for(uint8_t i=0 ; i < sizeof(packet.data) ; i++)
 		packet.data[i] = data[i];
 	packet.checksum = checksum((uint8_t *)&packet);
 
-	for(i=0, ptr=(uint8_t *)&packet ; i < sizeof(struct mh_z19c_command) ; i++, ptr++)
+	ptr=(uint8_t *)&packet;
+	for(uint8_t i=0 ; i < sizeof(struct mh_z19c_command) ; i++, ptr++)
 		if(write_serial(*ptr))
 			return MH_Z19C_ERROR_WRITE_SERIAL;
 
@@ -102,7 +105,7 @@ static enum mh_z19c_error read_return_value(
 	return_value->command = c;
 
 	// Data
-	for(int i=0; i < sizeof(return_value->data) ; i++)
+	for(uint8_t i=0; i < sizeof(return_value->data) ; i++)
 		if(read_serial(&c))
 			return MH_Z19C_ERROR_READ_SERIAL;
 		else
@@ -112,7 +115,6 @@ static enum mh_z19c_error read_return_value(
 	if(read_serial(&c))
 		return MH_Z19C_ERROR_READ_SERIAL;
 	return_value->checksum = c;
-
 	if(return_value->checksum != checksum((uint8_t *)return_value))
 		return MH_Z19C_ERROR_BAD_CHECKSUM;
 
@@ -148,14 +150,33 @@ enum mh_z19c_error mh_z19c_read(
 
 enum mh_z19c_error mh_z19c_self_calibration_for_zero_point(
 	bool enabled,
-	int (*write_serial)(uint8_t)
+	int (*write_serial)(uint8_t),
+	int (*read_serial)(uint8_t *)
 ) {
 	uint8_t data[5] = {0x00, 0x00, 0x00, 0x00, 0x00};
+	struct mh_z19c_return_value return_value;
+	enum mh_z19c_error ret;
 
 	if(enabled)
 		data[0] = 0xa0;
 
-	return send_command(COMMAND_SELF_CALIBRATION_FUNCTION_FOR_ZERO_POINT, data, write_serial);
+	if((ret=send_command(COMMAND_SELF_CALIBRATION_FUNCTION_FOR_ZERO_POINT, data, write_serial)))
+		return ret;
+
+	if((ret=read_return_value(&return_value, read_serial)))
+		return ret;
+
+	if(return_value.command != COMMAND_SELF_CALIBRATION_FUNCTION_FOR_ZERO_POINT)
+		return MH_Z19C_ERROR_INVALID_RESPONSE_COMMAND;
+
+	if(return_value.data[0] != 1)
+		return MH_Z19C_ERROR_UNEXPECTED_RESPONSE;
+
+	for(uint8_t i=1 ; i < sizeof(return_value.data) ; i++)
+		if(return_value.data[i] != 0)
+			return MH_Z19C_ERROR_UNEXPECTED_RESPONSE;
+
+	return MH_Z19C_ERROR_NONE;
 }
 
 char *mh_z19c_strerror(enum mh_z19c_error mh_z19c_errno) {

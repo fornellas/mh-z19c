@@ -20,6 +20,7 @@ enum mh_z19c_error {
 	MH_Z19C_ERROR_BAD_CHECKSUM,
 	MH_Z19C_ERROR_READ_SERIAL,
 	MH_Z19C_ERROR_INVALID_RESPONSE_COMMAND,
+	MH_Z19C_ERROR_UNEXPECTED_RESPONSE,
 };
 
 //
@@ -40,7 +41,8 @@ enum mh_z19c_error mh_z19c_read(
 
 enum mh_z19c_error mh_z19c_self_calibration_for_zero_point(
 	bool enabled,
-	int (*write_serial)(uint8_t)
+	int (*write_serial)(uint8_t),
+	int (*read_serial)(uint8_t *)
 );
 
 char *mh_z19c_strerror(enum mh_z19c_error mh_z19c_errno);
